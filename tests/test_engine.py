@@ -39,6 +39,6 @@ class MatchTests(unittest.TestCase):
   a.cycle(0,'formation',['4-3-3','4-4-2','3-5-2'])
   self.assertEqual(a.match.teams[0].formation,'4-4-2')
   a.change_speed(); self.assertEqual(a.speed,30)
-  a.draw(.016); self.assertGreater(len(a.buttons),30)
+  a.match_view=False; a.draw(.016); self.assertGreater(len(a.buttons),30)
   pygame.quit()
 if __name__=='__main__': unittest.main()

@@ -78,3 +78,15 @@ Enter your actual key only on your own machine or in secure environment settings
 Online API usage may incur charges. Connection errors appear in the chat response
 without changing the match. The provider connection must be configured separately;
 automated tests use a mocked AI response.
+
+## Pixel match view
+
+The simulator now opens in a retro pixel-style match view with an angled pitch,
+animated original player sprites, raised goal nets, scoreboard, minimap, active
+player labels and stamina bars. Press **Z** or click **Close-up** for a camera
+that follows the ball; press it again for the full pitch. Goal replays also work
+in this view. Press **V** or click **Dashboard** to manage squads, tactics and
+formations in the original statistics view. Click **Write scene** to open AI chat.
+Existing pause, fast-forward, save/load and export controls remain available.
+This is an original renderer inspired by the reference, with illustrative
+movement rather than a playable arcade football game.

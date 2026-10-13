@@ -6,6 +6,7 @@ import pygame
 from .engine import Match, FORMATIONS, TACTICS
 from .director import direct
 from .ai import plan_scene
+from .arcade import ArcadeView
 
 BG=(13,16,28); PANEL=(32,36,53); TEXT=(229,233,245); MUTED=(142,152,177); ACCENT=(191,103,238)
 class App:
@@ -18,6 +19,7 @@ class App:
   self.match=Match(seed); self.paused=False; self.speed=12; self.buttons=[]; self.selected=[None,None]; self.notice='Select a player, then a substitute. Five changes per team.'
   self.positions=[[list(x) for x in FORMATIONS[t.formation]] for t in self.match.teams]
   self.ball=[.5,.5]; self.scroll=0
+  self.match_view=True; self.camera_zoom=False; self.arcade=ArcadeView()
   self.chat_text=""; self.chat_active=False; self.chat_history=[]
   self.replay=None; self.replay_time=0.; self.seen_goals=set(); self.executor=ThreadPoolExecutor(max_workers=1); self.ai_future=None
  def text(self,text,x,y,color=TEXT,font=None):
@@ -139,11 +141,30 @@ class App:
    if self.replay_time>=3: self.text('GOAL!',p.centerx-45,p.centery-20,ACCENT,self.large)
   center=(p.x+int(self.ball[0]*p.width),p.y+int(self.ball[1]*p.height))
   pygame.draw.circle(self.canvas,(250,250,250),center,6); pygame.draw.circle(self.canvas,(30,30,30),center,2)
+ def switch_view(self): self.match_view=not self.match_view
+ def switch_camera(self): self.camera_zoom=not self.camera_zoom
+ def draw_match(self,dt):
+  self.buttons=[]
+  self.arcade.draw(self,dt)
+  controls=[('Dashboard [V]',self.switch_view),('Resume' if self.paused else 'Pause',self.toggle),('Fast '+str(self.speed)+'x',self.change_speed),('Save [S]',self.save),('Load [L]',self.load),('Export [E]',self.export)]
+  for i,(label,action) in enumerate(controls): self.button(label,(330+i*130,135,122,29),action)
+  self.button('Wide [Z]' if self.camera_zoom else 'Close-up [Z]',(1240,60,170,30),self.switch_camera)
+  self.button('Write scene',(1240,20,170,30),lambda:setattr(self,'chat_active',not self.chat_active))
+  if self.chat_active or self.ai_future:
+   self.panel((870,610,550,110),'AI STORY DIRECTOR')
+   pygame.draw.rect(self.canvas,(45,49,68),(883,645,423,30))
+   self.text((self.chat_text or 'Write what happens next…')[-52:],890,651)
+   self.button('Send',(1315,645,90,30),self.submit_scene)
+   self.text(self.notice[:70],884,687,MUTED,self.small)
+  size=self.screen.get_size()
+  self.screen.blit(pygame.transform.scale(self.canvas,size),(0,0)); pygame.display.flip()
  def draw(self,dt):
+  if self.match_view:
+   self.draw_match(dt); return
   self.canvas.fill(BG); self.buttons=[]
   m=self.match
   self.text('TOUCHLINE',22,20,ACCENT,self.large)
-  self.text('FOOTBALL / STORY ENGINE',22,54,MUTED,self.small)
+  self.button('Match view [V]',(22,50,175,30),self.switch_view)
   self.text(f'{m.teams[0].name}    {m.score[0]} : {m.score[1]}    {m.teams[1].name}',375,20,TEXT,self.large)
   self.text(f'{int(m.seconds//60):02}:{int(m.seconds%60):02}  '+('FULL TIME' if m.finished else 'PAUSED' if self.paused else 'LIVE'),650,58,ACCENT)
   self.team_panel(0,20); self.team_panel(1,1135)
@@ -207,12 +228,14 @@ class App:
       elif e.key==pygame.K_BACKSPACE: self.chat_text=self.chat_text[:-1]
       elif e.unicode and len(self.chat_text)<200: self.chat_text+=e.unicode
       continue
-     actions={pygame.K_SPACE:self.toggle,pygame.K_s:self.save,pygame.K_l:self.load,pygame.K_e:self.export,pygame.K_n:self.new,pygame.K_TAB:self.change_speed}
+     actions={pygame.K_SPACE:self.toggle,pygame.K_s:self.save,pygame.K_l:self.load,pygame.K_e:self.export,pygame.K_n:self.new,pygame.K_TAB:self.change_speed,pygame.K_v:self.switch_view,pygame.K_z:self.switch_camera}
      if e.key in actions: actions[e.key]()
    self.advance(dt)
    self.draw(dt); count+=1
    if frames and count>=frames: running=False
-  if screenshot: pygame.image.save(self.canvas,screenshot)
+  if screenshot:
+   Path(screenshot).parent.mkdir(parents=True,exist_ok=True)
+   pygame.image.save(self.canvas,screenshot)
   self.executor.shutdown(wait=False,cancel_futures=True)
   pygame.quit()
 
