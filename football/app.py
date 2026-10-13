@@ -7,6 +7,7 @@ from .engine import Match, FORMATIONS, TACTICS
 from .director import direct
 from .ai import plan_scene
 from .arcade import ArcadeView
+from .view3d import View3D
 
 BG=(13,16,28); PANEL=(32,36,53); TEXT=(229,233,245); MUTED=(142,152,177); ACCENT=(191,103,238)
 class App:
@@ -19,7 +20,7 @@ class App:
   self.match=Match(seed); self.paused=False; self.speed=12; self.buttons=[]; self.selected=[None,None]; self.notice='Select a player, then a substitute. Five changes per team.'
   self.positions=[[list(x) for x in FORMATIONS[t.formation]] for t in self.match.teams]
   self.ball=[.5,.5]; self.scroll=0
-  self.match_view=True; self.camera_zoom=False; self.arcade=ArcadeView()
+  self.match_view=True; self.camera_zoom=False; self.arcade=ArcadeView(); self.three_d=True; self.renderer3d=View3D()
   self.chat_text=""; self.chat_active=False; self.chat_history=[]
   self.replay=None; self.replay_time=0.; self.seen_goals=set(); self.executor=ThreadPoolExecutor(max_workers=1); self.ai_future=None
  def text(self,text,x,y,color=TEXT,font=None):
@@ -142,13 +143,17 @@ class App:
   center=(p.x+int(self.ball[0]*p.width),p.y+int(self.ball[1]*p.height))
   pygame.draw.circle(self.canvas,(250,250,250),center,6); pygame.draw.circle(self.canvas,(30,30,30),center,2)
  def switch_view(self): self.match_view=not self.match_view
+ def switch_dimension(self): self.three_d=not self.three_d; self.match_view=True
+ def rotate_camera(self,amount): self.renderer3d.angle+=amount
  def switch_camera(self): self.camera_zoom=not self.camera_zoom
  def draw_match(self,dt):
   self.buttons=[]
-  self.arcade.draw(self,dt)
+  if self.three_d: self.renderer3d.draw(self,dt)
+  else: self.arcade.draw(self,dt)
   controls=[('Dashboard [V]',self.switch_view),('Resume' if self.paused else 'Pause',self.toggle),('Fast '+str(self.speed)+'x',self.change_speed),('Save [S]',self.save),('Load [L]',self.load),('Export [E]',self.export)]
   for i,(label,action) in enumerate(controls): self.button(label,(330+i*130,135,122,29),action)
   self.button('Wide [Z]' if self.camera_zoom else 'Close-up [Z]',(1240,60,170,30),self.switch_camera)
+  self.button('Pixel view [B]' if self.three_d else '3D view [B]',(1240,100,170,30),self.switch_dimension)
   self.button('Write scene',(1240,20,170,30),lambda:setattr(self,'chat_active',not self.chat_active))
   if self.chat_active or self.ai_future:
    self.panel((870,610,550,110),'AI STORY DIRECTOR')
@@ -228,7 +233,7 @@ class App:
       elif e.key==pygame.K_BACKSPACE: self.chat_text=self.chat_text[:-1]
       elif e.unicode and len(self.chat_text)<200: self.chat_text+=e.unicode
       continue
-     actions={pygame.K_SPACE:self.toggle,pygame.K_s:self.save,pygame.K_l:self.load,pygame.K_e:self.export,pygame.K_n:self.new,pygame.K_TAB:self.change_speed,pygame.K_v:self.switch_view,pygame.K_z:self.switch_camera}
+     actions={pygame.K_SPACE:self.toggle,pygame.K_s:self.save,pygame.K_l:self.load,pygame.K_e:self.export,pygame.K_n:self.new,pygame.K_TAB:self.change_speed,pygame.K_v:self.switch_view,pygame.K_z:self.switch_camera,pygame.K_b:self.switch_dimension,pygame.K_LEFT:lambda:self.rotate_camera(-.15),pygame.K_RIGHT:lambda:self.rotate_camera(.15)}
      if e.key in actions: actions[e.key]()
    self.advance(dt)
    self.draw(dt); count+=1
@@ -242,10 +247,11 @@ class App:
 def main():
  parser=argparse.ArgumentParser()
  parser.add_argument('--seed',type=int,default=7); parser.add_argument('--frames',type=int,default=0)
- parser.add_argument('--screenshot'); parser.add_argument('--simulate',action='store_true')
+ parser.add_argument('--pixel',action='store_true'); parser.add_argument('--screenshot'); parser.add_argument('--simulate',action='store_true')
  args=parser.parse_args()
  if args.simulate:
   m=Match(args.seed); m.step(5400); m.export(); m.save('exports/match.json')
   print(f'Full time {m.score}; {len(m.events)} events exported')
- else: App(args.seed).run(args.frames,args.screenshot)
+ else:
+  app=App(args.seed); app.three_d=not args.pixel; app.run(args.frames,args.screenshot)
 if __name__=='__main__': main()

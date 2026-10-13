@@ -5,7 +5,7 @@ from football.director import direct
 
 class ArcadeTests(unittest.TestCase):
  def test_match_camera_replay_and_dashboard(self):
-  app=App()
+  app=App(); app.three_d=False
   try:
    self.assertTrue(app.match_view)
    app.draw(.016)

@@ -90,3 +90,20 @@ formations in the original statistics view. Click **Write scene** to open AI cha
 Existing pause, fast-forward, save/load and export controls remain available.
 This is an original renderer inspired by the reference, with illustrative
 movement rather than a playable arcade football game.
+
+## 3D match view
+
+The simulator opens in an original low-poly 3D view, rendered in software through
+Pygame. Players are shaded 3D meshes with animated limbs; the pitch, stands,
+goal posts, nets and airborne replay ball use perspective projection.
+No new dependencies, graphics drivers or model downloads are needed.
+
+- **B** switches 3D/pixel rendering.
+- **Left/Right arrows** rotate the 3D camera.
+- **Z** switches wide/closer perspective.
+- **V** opens the squad/statistics dashboard.
+- AI chat, pause, speed, save/load and goal replays work in either match view.
+
+Use python -m football.app --pixel to start directly in the pixel view.
+The 3D view is a lightweight tactical visualization with stylized models,
+not a realistic football physics or motion-capture system.
