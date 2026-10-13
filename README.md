@@ -37,3 +37,44 @@ to weight chances, defending and goalkeeper ability to resist goals, and pace
 to control visual movement. The pitch is a tactical visualization rather than a
 physics engine. Matches last 90 minutes; there are no injuries, cards, offside,
 stoppage time or extra time. Fictional squads require no assets or credentials.
+
+## AI chat and goal replays
+
+Click the Story Director box, write the next scene (for example, "Akira beats
+two defenders and scores a header"), then press Enter or Send. Escape leaves
+typing. The match waits while you type and while AI plans the scene.
+The AI selects a validated player/action and writes commentary; the match engine
+updates the score and statistics. Both generated and directed goals show a
+four-second buildup/shot replay, with the scoring method displayed. Replays use
+illustrative paths rather than recorded football physics. Fast-forward stays
+visible and replays use normal real-time speed.
+
+Choose an AI provider using environment variables before launch. No key is
+stored in code, match saves, or exports. Prompts and commentary are saved in
+match events; online providers receive your prompt and on-pitch player names.
+
+Local Ollama (default): install Ollama on your computer, then run:
+
+    ollama pull llama3.2
+
+Ollama must be running at localhost:11434. The default model is llama3.2.
+You can set FOOTBALL_AI_MODEL to another installed model.
+
+OpenAI, in Windows PowerShell:
+
+    $env:FOOTBALL_AI_PROVIDER = "openai"
+    $env:FOOTBALL_AI_MODEL = "gpt-4.1-mini"
+    $env:FOOTBALL_AI_KEY = "<your API key>"
+    python -m football.app
+
+macOS/Linux:
+
+    export FOOTBALL_AI_PROVIDER=openai
+    export FOOTBALL_AI_MODEL=gpt-4.1-mini
+    export FOOTBALL_AI_KEY="<your API key>"
+    python -m football.app
+
+Enter your actual key only on your own machine or in secure environment settings.
+Online API usage may incur charges. Connection errors appear in the chat response
+without changing the match. The provider connection must be configured separately;
+automated tests use a mocked AI response.

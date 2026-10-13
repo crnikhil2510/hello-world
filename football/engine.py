@@ -80,7 +80,9 @@ class Match:
    goal=target and self.rng.random()<min(.8,quality/(.30+p.shooting/200)*(1.15-keeper.defending/250))
    if goal:
     self.score[self.owner]+=1
-    self.event('Goal',self.owner,f'{p.name} breaks through and scores! The crowd erupts.',player=p.name,xg=round(quality,3))
+    from .director import goal_path
+    method=self.rng.choice(['header','free kick','long shot','dribble and finish'])
+    self.event('Goal',self.owner,f'{p.name} scores with a {method}! The crowd erupts.',player=p.name,xg=round(quality,3),method=method,team_side=self.owner,scorer_index=self.carrier,goal_path=goal_path(self.owner,self.carrier,method))
     self.ball=[.5,.5]
    else:
     self.event('Save' if target else 'Miss',self.owner,f'{p.name} shoots — '+(f'{keeper.name} makes the save!' if target else 'the ball flashes wide.'),player=p.name,xg=round(quality,3))

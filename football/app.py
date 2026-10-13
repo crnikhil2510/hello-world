@@ -1,8 +1,11 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import math
 from pathlib import Path
 import pygame
 from .engine import Match, FORMATIONS, TACTICS
+from .director import direct
+from .ai import plan_scene
 
 BG=(13,16,28); PANEL=(32,36,53); TEXT=(229,233,245); MUTED=(142,152,177); ACCENT=(191,103,238)
 class App:
@@ -15,6 +18,8 @@ class App:
   self.match=Match(seed); self.paused=False; self.speed=12; self.buttons=[]; self.selected=[None,None]; self.notice='Select a player, then a substitute. Five changes per team.'
   self.positions=[[list(x) for x in FORMATIONS[t.formation]] for t in self.match.teams]
   self.ball=[.5,.5]; self.scroll=0
+  self.chat_text=""; self.chat_active=False; self.chat_history=[]
+  self.replay=None; self.replay_time=0.; self.seen_goals=set(); self.executor=ThreadPoolExecutor(max_workers=1); self.ai_future=None
  def text(self,text,x,y,color=TEXT,font=None):
   self.canvas.blit((font or self.font).render(str(text),True,color),(x,y))
  def panel(self,r,title):
@@ -56,6 +61,45 @@ class App:
    p=t.players[i]
    self.text(f'PAS {p.passing}  SHOT {p.shooting}',x+12,793,MUTED,self.small)
    self.text(f'DEF {p.defending}  PACE {p.pace}',x+145,793,MUTED,self.small)
+ def submit_scene(self):
+  prompt=self.chat_text.strip()
+  if not prompt or self.ai_future: return
+  if self.match.finished: self.notice='Start a new match before directing a scene.'; return
+  roster=[p.name for t in self.match.teams for p in t.players]
+  self.ai_future=self.executor.submit(plan_scene,prompt,roster)
+  self.chat_history.append((prompt,'AI is planning the next scene…'))
+  self.notice='AI is planning…'; self.chat_text=""
+ def poll_ai(self):
+  if not self.ai_future or not self.ai_future.done(): return
+  try:
+   scene=self.ai_future.result()
+   verbs={'Goal':'scores','Save':'shoots and the keeper saves','Miss':'misses','Pass':'passes'}
+   command=scene['player']+' '+verbs[scene['action']]+' '+scene['method']
+   response=direct(self.match,command)
+   if response.startswith('Scene applied'):
+    self.match.events[-1]['commentary']=scene['commentary'][:180]
+    self.match.events[-1]['source']='ai'
+    self.match.events[-1]['prompt']=self.chat_history[-1][0]
+    response=scene['commentary'][:180]
+   self.notice=response; self.capture_goals()
+  except Exception as error:
+   self.notice=str(error) if isinstance(error,ValueError) else 'AI response could not be applied. Try again.'
+  self.chat_history[-1]=(self.chat_history[-1][0],self.notice)
+  self.ai_future=None
+ def capture_goals(self):
+  for i,e in enumerate(self.match.events):
+   if e['kind']=='Goal' and i not in self.seen_goals:
+    self.seen_goals.add(i)
+    self.replay=e; self.replay_time=0.
+ def advance(self,dt):
+  self.poll_ai()
+  if self.ai_future: return
+  if self.replay:
+   if not self.paused:
+    self.replay_time+=dt
+    if self.replay_time>=4: self.replay=None
+  elif not self.paused and not self.chat_active:
+   self.match.step(dt*self.speed); self.capture_goals()
  def pitch(self,dt):
   r=pygame.Rect(330,372,780,405)
   pygame.draw.rect(self.canvas,(19,98,65),r,border_radius=10)
@@ -84,6 +128,15 @@ class App:
     pygame.draw.circle(self.canvas,t.color,(xx,yy),10)
     self.text(player.number,xx-5,yy-7,(26,31,41),self.small)
   for k in (0,1): self.ball[k]+=(self.match.ball[k]-self.ball[k])*min(1,dt*6)
+  if self.replay:
+   path=self.replay['goal_path']
+   progress=min(1,self.replay_time/3)* (len(path)-1)
+   segment=min(len(path)-2,int(progress)); fraction=min(1,progress-segment)
+   self.ball=[path[segment][k]+(path[segment+1][k]-path[segment][k])*fraction for k in (0,1)]
+   points=[(p.x+int(x*p.width),p.y+int(y*p.height)) for x,y in path]
+   pygame.draw.lines(self.canvas,(246,218,113),False,points,2)
+   self.text('GOAL REPLAY • '+self.replay['player']+' • '+self.replay.get('method','finish'),p.x+12,p.y+12,(255,240,166))
+   if self.replay_time>=3: self.text('GOAL!',p.centerx-45,p.centery-20,ACCENT,self.large)
   center=(p.x+int(self.ball[0]*p.width),p.y+int(self.ball[1]*p.height))
   pygame.draw.circle(self.canvas,(250,250,250),center,6); pygame.draw.circle(self.canvas,(30,30,30),center,2)
  def draw(self,dt):
@@ -105,14 +158,21 @@ class App:
    width=int(230*vals[0]/max(1,sum(vals)))
    pygame.draw.rect(self.canvas,m.teams[1].color,(391,y+20,230,6))
    pygame.draw.rect(self.canvas,m.teams[0].color,(391,y+20,width,6))
-  self.panel((700,88,410,265),'MATCH EVENTS  •  mouse wheel to browse')
+  self.panel((700,88,410,138),'MATCH EVENTS  •  scroll to browse')
   keyevents=[e for e in m.events if e['kind']!='Pass']
   end=max(0,len(keyevents)-self.scroll)
-  for i,e in enumerate(keyevents[max(0,end-7):end]):
+  for i,e in enumerate(keyevents[max(0,end-3):end]):
    self.text(f"{e['minute']:02}′ {e['kind']} • {e.get('player',e['team'])}",715,132+i*29,ACCENT if e['kind']=='Goal' else TEXT,self.small)
+  self.panel((700,235,410,118),'STORY DIRECTOR • AI chat')
+  self.text('Try: Akira beats two defenders and scores a header.',715,265,MUTED,self.small)
+  pygame.draw.rect(self.canvas,(65,55,88) if self.chat_active else (43,48,67),(715,287,292,30),border_radius=4)
+  self.text((self.chat_text or 'Click here to write the next scene')[-36:],722,293)
+  self.buttons.append((pygame.Rect(715,287,292,30),lambda:setattr(self,'chat_active',True)))
+  self.button('Send',(1014,287,80,30),self.submit_scene)
+  self.text(self.chat_history[-1][1][:56] if self.chat_history else 'Enter sends • Esc leaves typing • clock waits while typing',715,326,MUTED,self.small)
   self.pitch(dt)
   self.text(self.notice,330,792,MUTED,self.small)
-  controls=[('Resume' if self.paused else 'Pause',self.toggle),('Speed '+str(self.speed)+'x',self.change_speed),('Save [S]',self.save),('Load [L]',self.load),('Export [E]',self.export),('New match [N]',self.new)]
+  controls=[('Resume' if self.paused else 'Pause',self.toggle),('Fast '+str(self.speed)+'x',self.change_speed),('Save [S]',self.save),('Load [L]',self.load),('Export [E]',self.export),('New match [N]',self.new)]
   for i,(label,action) in enumerate(controls): self.button(label,(330+i*130,827,122,32),action)
   self.text(m.events[-1]['commentary'][:145],24,875,TEXT)
   size=self.screen.get_size(); self.screen.blit(pygame.transform.smoothscale(self.canvas,size),(0,0)); pygame.display.flip()
@@ -121,12 +181,14 @@ class App:
   speeds=[1,6,12,30,60,120]; self.speed=speeds[(speeds.index(self.speed)+1)%len(speeds)]
  def save(self): self.match.save('exports/match.json'); self.notice='Saved exports/match.json'
  def load(self):
+  if self.ai_future: self.notice='Wait for the AI scene before loading.'; return
   try:
-   self.match=Match.load('exports/match.json'); self.scroll=0; self.selected=[None,None]; self.notice='Match restored.'
+   self.match=Match.load('exports/match.json'); self.replay=None; self.seen_goals={i for i,e in enumerate(self.match.events) if e['kind']=='Goal'}; self.scroll=0; self.selected=[None,None]; self.notice='Match restored.'
   except (OSError,ValueError,KeyError,TypeError) as e: self.notice=f'Cannot load: {e}'
  def export(self): self.match.export(); self.notice='Exported exports/events.json and exports/storyboard.md'
  def new(self):
-  self.match=Match(); self.scroll=0; self.selected=[None,None]; self.notice='New match started.'
+  if self.ai_future: self.notice='Wait for the AI scene before resetting.'; return
+  self.match=Match(); self.replay=None; self.seen_goals=set(); self.scroll=0; self.selected=[None,None]; self.notice='New match started.'
  def run(self,frames=0,screenshot=None):
   running=True; count=0
   while running:
@@ -139,12 +201,19 @@ class App:
       if rect.collidepoint(pos): action(); break
     elif e.type==pygame.MOUSEWHEEL: self.scroll=max(0,min(len(self.match.events),self.scroll+e.y))
     elif e.type==pygame.KEYDOWN:
+     if self.chat_active:
+      if e.key==pygame.K_RETURN: self.submit_scene()
+      elif e.key==pygame.K_ESCAPE: self.chat_active=False
+      elif e.key==pygame.K_BACKSPACE: self.chat_text=self.chat_text[:-1]
+      elif e.unicode and len(self.chat_text)<200: self.chat_text+=e.unicode
+      continue
      actions={pygame.K_SPACE:self.toggle,pygame.K_s:self.save,pygame.K_l:self.load,pygame.K_e:self.export,pygame.K_n:self.new,pygame.K_TAB:self.change_speed}
      if e.key in actions: actions[e.key]()
-   if not self.paused: self.match.step(dt*self.speed)
+   self.advance(dt)
    self.draw(dt); count+=1
    if frames and count>=frames: running=False
   if screenshot: pygame.image.save(self.canvas,screenshot)
+  self.executor.shutdown(wait=False,cancel_futures=True)
   pygame.quit()
 
 def main():
